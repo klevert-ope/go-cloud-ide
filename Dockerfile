@@ -31,10 +31,10 @@ WORKDIR /app
 COPY --from=builder /out/server /app/server
 COPY templates /app/templates
 
-EXPOSE 8080
+EXPOSE 8090
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -q -T 2 -O /dev/null http://127.0.0.1:8080/ || exit 1
+    CMD wget -q -T 2 -O /dev/null http://127.0.0.1:8090/ || exit 1
 
 ENTRYPOINT ["/app/server"]
