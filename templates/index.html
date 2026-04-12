@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Cloud IDE</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<h1>Cloud IDE</h1>
+
+<h2>Create Workspace</h2>
+<button hx-post="/workspaces" hx-target="#jobs" hx-swap="innerHTML">
+    Create Workspace
+</button>
+
+<h2>Active Workspaces</h2>
+<div id="jobs"
+     hx-get="/ui/workspaces"
+     hx-trigger="load, every 5s">
+</div>
+
+</body>
+</html>
