@@ -16,6 +16,7 @@ env:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    environment: secrets
     permissions:
       contents: read
 
