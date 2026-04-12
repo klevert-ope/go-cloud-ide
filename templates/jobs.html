@@ -1,18 +1,66 @@
 {{range .}}
-<div style="border:1px solid #ccc; padding:10px; margin:10px;">
-    <p><strong>ID:</strong> {{.ID}}</p>
+<div class="col-md-6 col-lg-4">
+    <div class="card workspace-card shadow-sm h-100">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <h6 class="card-title text-truncate mb-0 font-monospace text-secondary" title="{{.ID}}">{{.ID}}</h6>
+                {{if eq .Status "running"}}
+                    <span class="badge bg-success"><i class="bi bi-play-fill me-1"></i>Running</span>
+                {{else if eq .Status "stopped"}}
+                    <span class="badge bg-warning text-dark"><i class="bi bi-pause-fill me-1"></i>Stopped</span>
+                {{else if eq .Status "creating"}}
+                    <span class="badge bg-primary"><i class="bi bi-arrow-repeat spin me-1"></i>Creating</span>
+                {{else}}
+                    <span class="badge bg-danger">{{.Status}}</span>
+                {{end}}
+            </div>
 
-    <a href="/ws/{{.ID}}" target="_blank">
-        Open Workspace
-    </a>
+            <p class="card-text text-muted small mb-3">
+                <i class="bi bi-hdd-network me-1"></i>Port: <span class="font-monospace">{{.Port}}</span>
+            </p>
 
-    <button
-            hx-delete="/delete?id={{.ID}}"
-            hx-target="#jobs"
-            hx-swap="innerHTML">
-        Delete
-    </button>
+            <div class="d-flex gap-2 flex-wrap">
+                {{if eq .Status "running"}}
+                    <a href="/ws/{{.ID}}" target="_blank" class="btn btn-success btn-sm">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                    </a>
+                    <button class="btn btn-warning btn-sm"
+                            hx-post="/workspaces/stop?id={{.ID}}"
+                            hx-target="#jobs"
+                            hx-swap="innerHTML">
+                        <i class="bi bi-stop-fill me-1"></i>Stop
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm"
+                            hx-post="/workspaces/restart?id={{.ID}}"
+                            hx-target="#jobs"
+                            hx-swap="innerHTML">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Restart
+                    </button>
+                {{else if eq .Status "stopped"}}
+                    <button class="btn btn-success btn-sm"
+                            hx-post="/workspaces/start?id={{.ID}}"
+                            hx-target="#jobs"
+                            hx-swap="innerHTML">
+                        <i class="bi bi-play-fill me-1"></i>Start
+                    </button>
+                {{end}}
+
+                <button class="btn btn-outline-danger btn-sm ms-auto"
+                        hx-delete="/delete?id={{.ID}}"
+                        hx-target="#jobs"
+                        hx-swap="innerHTML">
+                    <i class="bi bi-trash me-1"></i>Delete
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 {{else}}
-<p>No active workspaces</p>
+<div class="col-12 text-center py-5">
+    <div class="text-muted">
+        <i class="bi bi-inbox display-6 d-block mb-3"></i>
+        <p class="mb-0">No workspaces yet</p>
+        <small>Create one to get started</small>
+    </div>
+</div>
 {{end}}

@@ -18,7 +18,7 @@ type Client struct {
 	cli *client.Client
 }
 
-const workspaceReadyTimeout = 45 * time.Second
+const workspaceReadyTimeout = 30 * time.Second
 
 // New connects to the local Docker daemon and returns a workspace client.
 func New() (*Client, error) {
@@ -38,14 +38,13 @@ func (c *Client) CreateVolume(ctx context.Context, name string) error {
 
 // RunWorkspace starts a code-server container and returns its container ID and host port.
 func (c *Client) RunWorkspace(ctx context.Context, name, volume string) (string, string, error) {
-	port := nat.Port("80/tcp")
+	port := nat.Port("8443/tcp")
 
 	resp, err := c.cli.ContainerCreate(ctx,
 		&container.Config{
 			Image: "islandora/code-server:4",
-			Env:   []string{"PASSWORD=dev123"},
 			ExposedPorts: nat.PortSet{
-				"80/tcp": {},
+				"8443/tcp": {},
 			},
 		},
 		&container.HostConfig{
@@ -82,12 +81,12 @@ func (c *Client) RunWorkspace(ctx context.Context, name, volume string) (string,
 	}
 
 	if inspect.NetworkSettings == nil {
-		return "", "", apperr.E("docker.container_network_settings", apperr.KindExternal, "workspace container did not report network settings", fmt.Errorf("missing network settings"))
+		return "", "", apperr.New("docker.container_network_settings", apperr.KindExternal, "workspace container did not report network settings")
 	}
 
 	bindings := inspect.NetworkSettings.Ports[port]
 	if len(bindings) == 0 {
-		return "", "", apperr.E("docker.container_port", apperr.KindExternal, "workspace container did not expose a host port", fmt.Errorf("no port binding assigned"))
+		return "", "", apperr.New("docker.container_port", apperr.KindExternal, "workspace container did not expose a host port")
 	}
 
 	return resp.ID, bindings[0].HostPort, nil
@@ -103,7 +102,7 @@ func (c *Client) WaitUntilReady(ctx context.Context, port string) error {
 	defer cancel()
 
 	httpClient := &http.Client{Timeout: 1 * time.Second}
-	target := "http://127.0.0.1:" + port
+	target := "http://host.docker.internal:" + port
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -116,21 +115,73 @@ func (c *Client) WaitUntilReady(ctx context.Context, port string) error {
 		resp, err := httpClient.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
-			// Accept 200 (OK), 302 (Redirect), or 403 (Forbidden - nginx auth not ready yet)
-			// as indicators that nginx proxy is reachable
-			if resp.StatusCode == http.StatusOK ||
-				resp.StatusCode == http.StatusFound ||
-				resp.StatusCode == http.StatusForbidden {
+			if resp.StatusCode < http.StatusInternalServerError {
 				return nil
 			}
 		}
 
 		select {
 		case <-ctx.Done():
-			return apperr.E("docker.workspace_ready.timeout", apperr.KindExternal, "workspace is still starting; try again in a moment", ctx.Err())
+			return apperr.E("docker.workspace_ready.timeout", apperr.KindExternal, fmt.Sprintf("workspace failed to start within %s - the container may be unhealthy or the application inside failed to start", workspaceReadyTimeout), ctx.Err())
 		case <-ticker.C:
 		}
 	}
+}
+
+// StopContainer stops a workspace container without removing it.
+func (c *Client) StopContainer(ctx context.Context, id string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	timeout := 5 * time.Second
+	timeoutSeconds := int(timeout / time.Second)
+	if err := c.cli.ContainerStop(ctx, id, container.StopOptions{Timeout: &timeoutSeconds}); err != nil {
+		return apperr.E("docker.container_stop", apperr.KindExternal, "failed to stop workspace container", err)
+	}
+
+	return nil
+}
+
+// StartContainer starts an existing workspace container.
+func (c *Client) StartContainer(ctx context.Context, id string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := c.cli.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
+		return apperr.E("docker.container_start", apperr.KindExternal, "failed to start workspace container", err)
+	}
+
+	return nil
+}
+
+// InspectContainer returns container details including state and port bindings.
+func (c *Client) InspectContainer(ctx context.Context, id string) (*container.InspectResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	inspect, err := c.cli.ContainerInspect(ctx, id)
+	if err != nil {
+		return nil, apperr.E("docker.container_inspect", apperr.KindExternal, "failed to inspect workspace container", err)
+	}
+
+	return &inspect, nil
+}
+
+// ListContainers returns all containers with the workspace label.
+func (c *Client) ListContainers(ctx context.Context) ([]container.Summary, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, apperr.E("docker.container_list", apperr.KindExternal, "failed to list containers", err)
+	}
+
+	return containers, nil
 }
 
 // StopAndRemove shuts down a workspace container and deletes it from Docker.

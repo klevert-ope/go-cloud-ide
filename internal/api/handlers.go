@@ -38,6 +38,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		ContainerID: cid,
 		Volume:      vol,
 		Port:        port,
+		Status:      store.StatusRunning,
 		CreatedAt:   time.Now(),
 		LastActive:  time.Now(),
 	}
@@ -101,8 +102,11 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Docker.StopAndRemove(r.Context(), ws.ContainerID); err != nil {
-		apperr.Write(w, r, err)
-		return
+		// Log but continue if container is already gone
+		if !strings.Contains(err.Error(), "No such container") {
+			apperr.Write(w, r, err)
+			return
+		}
 	}
 
 	if err := h.Store.Delete(id); err != nil {
@@ -119,6 +123,185 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 
 		if err := templates.ExecuteTemplate(w, "jobs.html", list); err != nil {
 			apperr.Write(w, r, apperr.E("api.delete.render", apperr.KindInternal, "failed to render workspace list", err))
+		}
+		return
+	}
+
+	w.WriteHeader(204)
+}
+
+// Stop stops a workspace container without removing it.
+func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		apperr.Write(w, r, apperr.New("api.stop", apperr.KindMethod, "method not allowed"))
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		apperr.Write(w, r, apperr.New("api.stop", apperr.KindInvalid, "workspace id is required"))
+		return
+	}
+
+	ws, err := h.Store.Get(id)
+	if err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if err := h.Docker.StopContainer(r.Context(), ws.ContainerID); err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if err := h.Store.UpdateStatus(id, store.StatusStopped); err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		list, err := h.Store.List()
+		if err != nil {
+			apperr.Write(w, r, err)
+			return
+		}
+
+		if err := templates.ExecuteTemplate(w, "jobs.html", list); err != nil {
+			apperr.Write(w, r, apperr.E("api.stop.render", apperr.KindInternal, "failed to render workspace list", err))
+		}
+		return
+	}
+
+	w.WriteHeader(204)
+}
+
+// Start starts a stopped workspace container.
+func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		apperr.Write(w, r, apperr.New("api.start", apperr.KindMethod, "method not allowed"))
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		apperr.Write(w, r, apperr.New("api.start", apperr.KindInvalid, "workspace id is required"))
+		return
+	}
+
+	ws, err := h.Store.Get(id)
+	if err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if err := h.Docker.StartContainer(r.Context(), ws.ContainerID); err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	// Refresh port information after start
+	inspect, err := h.Docker.InspectContainer(r.Context(), ws.ContainerID)
+	if err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if inspect.NetworkSettings != nil {
+		if bindings, ok := inspect.NetworkSettings.Ports["8443/tcp"]; ok && len(bindings) > 0 {
+			ws.Port = bindings[0].HostPort
+		}
+	}
+
+	ws.Status = store.StatusRunning
+	ws.LastActive = time.Now()
+	if err := h.Store.Update(ws); err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		list, err := h.Store.List()
+		if err != nil {
+			apperr.Write(w, r, err)
+			return
+		}
+
+		if err := templates.ExecuteTemplate(w, "jobs.html", list); err != nil {
+			apperr.Write(w, r, apperr.E("api.start.render", apperr.KindInternal, "failed to render workspace list", err))
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"id":   id,
+		"port": ws.Port,
+		"url":  "http://localhost:8090/ws/" + id,
+	}); err != nil {
+		apperr.Write(w, r, apperr.E("api.start.encode", apperr.KindInternal, "failed to encode response", err))
+	}
+}
+
+// Restart restarts a workspace container.
+func (h *Handler) Restart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		apperr.Write(w, r, apperr.New("api.restart", apperr.KindMethod, "method not allowed"))
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		apperr.Write(w, r, apperr.New("api.restart", apperr.KindInvalid, "workspace id is required"))
+		return
+	}
+
+	ws, err := h.Store.Get(id)
+	if err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	// Stop first
+	if err := h.Docker.StopContainer(r.Context(), ws.ContainerID); err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	// Then start
+	if err := h.Docker.StartContainer(r.Context(), ws.ContainerID); err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	// Refresh port information
+	inspect, err := h.Docker.InspectContainer(r.Context(), ws.ContainerID)
+	if err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if inspect.NetworkSettings != nil {
+		if bindings, ok := inspect.NetworkSettings.Ports["8443/tcp"]; ok && len(bindings) > 0 {
+			ws.Port = bindings[0].HostPort
+		}
+	}
+
+	ws.Status = store.StatusRunning
+	ws.LastActive = time.Now()
+	if err := h.Store.Update(ws); err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		list, err := h.Store.List()
+		if err != nil {
+			apperr.Write(w, r, err)
+			return
+		}
+
+		if err := templates.ExecuteTemplate(w, "jobs.html", list); err != nil {
+			apperr.Write(w, r, apperr.E("api.restart.render", apperr.KindInternal, "failed to render workspace list", err))
 		}
 		return
 	}

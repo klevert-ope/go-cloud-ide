@@ -6,3 +6,10 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
+
+  code-server:
+    image: islandora/code-server:4
+    volumes:
+      - ./code-server-data:/config
+    ports:
+      - "8443:8443"
