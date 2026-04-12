@@ -102,7 +102,7 @@ func (c *Client) WaitUntilReady(ctx context.Context, port string) error {
 	ctx, cancel := context.WithTimeout(ctx, workspaceReadyTimeout)
 	defer cancel()
 
-	client := &http.Client{Timeout: 1 * time.Second}
+	httpClient := &http.Client{Timeout: 1 * time.Second}
 	target := "http://127.0.0.1:" + port
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -113,7 +113,7 @@ func (c *Client) WaitUntilReady(ctx context.Context, port string) error {
 			return apperr.E("docker.workspace_ready.request", apperr.KindInternal, "failed to build workspace readiness request", err)
 		}
 
-		resp, err := client.Do(req)
+		resp, err := httpClient.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode < http.StatusInternalServerError {
