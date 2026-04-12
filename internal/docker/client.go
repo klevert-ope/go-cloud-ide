@@ -38,11 +38,11 @@ func (c *Client) CreateVolume(ctx context.Context, name string) error {
 
 // RunWorkspace starts a code-server container and returns its container ID and host port.
 func (c *Client) RunWorkspace(ctx context.Context, name, volume string) (string, string, error) {
-	port := nat.Port("8080/tcp")
+	port := nat.Port("8090/tcp")
 
 	resp, err := c.cli.ContainerCreate(ctx,
 		&container.Config{
-			Image: "codercom/code-server:4.115.0-39",
+			Image: "islandora/code-server:4",
 			Env:   []string{"PASSWORD=dev123"},
 			ExposedPorts: nat.PortSet{
 				port: {},
