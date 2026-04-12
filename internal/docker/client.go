@@ -42,7 +42,7 @@ func (c *Client) RunWorkspace(ctx context.Context, name, volume string) (string,
 
 	resp, err := c.cli.ContainerCreate(ctx,
 		&container.Config{
-			Image: "ghcr.io/codercom/code-server:fedora",
+			Image: "codercom/code-server:4.115.0-39",
 			Env:   []string{"PASSWORD=dev123"},
 			ExposedPorts: nat.PortSet{
 				port: {},
