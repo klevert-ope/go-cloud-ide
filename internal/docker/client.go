@@ -18,7 +18,7 @@ type Client struct {
 	cli *client.Client
 }
 
-const workspaceReadyTimeout = 10 * time.Second
+const workspaceReadyTimeout = 45 * time.Second
 
 // New connects to the local Docker daemon and returns a workspace client.
 func New() (*Client, error) {
@@ -38,14 +38,14 @@ func (c *Client) CreateVolume(ctx context.Context, name string) error {
 
 // RunWorkspace starts a code-server container and returns its container ID and host port.
 func (c *Client) RunWorkspace(ctx context.Context, name, volume string) (string, string, error) {
-	port := nat.Port("8090/tcp")
+	port := nat.Port("80/tcp")
 
 	resp, err := c.cli.ContainerCreate(ctx,
 		&container.Config{
 			Image: "islandora/code-server:4",
 			Env:   []string{"PASSWORD=dev123"},
 			ExposedPorts: nat.PortSet{
-				port: {},
+				"80/tcp": {},
 			},
 		},
 		&container.HostConfig{
@@ -116,7 +116,11 @@ func (c *Client) WaitUntilReady(ctx context.Context, port string) error {
 		resp, err := httpClient.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
-			if resp.StatusCode < http.StatusInternalServerError {
+			// Accept 200 (OK), 302 (Redirect), or 403 (Forbidden - nginx auth not ready yet)
+			// as indicators that nginx proxy is reachable
+			if resp.StatusCode == http.StatusOK ||
+				resp.StatusCode == http.StatusFound ||
+				resp.StatusCode == http.StatusForbidden {
 				return nil
 			}
 		}
