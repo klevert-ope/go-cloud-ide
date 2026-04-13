@@ -7,7 +7,7 @@ The system provisions a dedicated `code-server` container per workspace with a p
 - Make sure Docker is running
 - Run `docker compose up --build`
 - Open `http://localhost:8090`
-- Workspace password: `dev123`
+- Workspace password: `password`
 
 ## What I Built
 
